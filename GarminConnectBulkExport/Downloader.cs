@@ -14,42 +14,33 @@ namespace GarminConnectBulkExport
         private readonly CookieContainer _cookieJar;
         private readonly string _email;
         private readonly string _folder;
-        private readonly ILogger _logger;
         private readonly string _password;
         private int _redirectCount;
 
         public Downloader(string email, string password, string folder, ILogger logger)
         {
-            if (email == null) throw new ArgumentNullException("email");
-            if (password == null) throw new ArgumentNullException("password");
-            if (folder == null) throw new ArgumentNullException("folder");
-            if (logger == null) throw new ArgumentNullException("logger");
-
-            _email = email;
-            _password = password;
-            _folder = folder;
-            _logger = logger;
+            _email = email ?? throw new ArgumentNullException(nameof(email));
+            _password = password ?? throw new ArgumentNullException(nameof(password));
+            _folder = folder ?? throw new ArgumentNullException(nameof(folder));
+            Logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _cookieJar = new CookieContainer();
         }
 
-        public ILogger Logger
-        {
-            get { return _logger; }
-        }
+        private ILogger Logger { get; }
 
-        public string DoGet(string url)
+        private string DoGet(string url)
         {
             try
             {
-                var request = (HttpWebRequest) WebRequest.Create(url);
+                var request = (HttpWebRequest)WebRequest.Create(url);
                 request.CookieContainer = _cookieJar;
                 request.AllowAutoRedirect = false;
                 request.Referer = "https://connect.garmin.com/modern/";
                 request.Method = "GET";
-                var response = (HttpWebResponse) request.GetResponse();
+                var response = (HttpWebResponse)request.GetResponse();
 
 
-                if ((int) response.StatusCode > 300 && (int) response.StatusCode < 399)
+                if ((int)response.StatusCode > 300 && (int)response.StatusCode < 399)
                 {
                     string redirectUrl = response.Headers["Location"];
                     Logger.Log("Redirected to: " + redirectUrl);
@@ -60,13 +51,13 @@ namespace GarminConnectBulkExport
                     }
                 }
 
-                Logger.Log(string.Format("Content length is {0}", response.ContentLength));
-                Logger.Log(string.Format("Content type is {0}", response.ContentType));
+                Logger.Log($"Content length is {response.ContentLength}");
+                Logger.Log($"Content type is {response.ContentType}");
 
                 // Get the stream associated with the response.
-                Stream receiveStream = response.GetResponseStream();
+                var receiveStream = response.GetResponseStream();
 
-                string res = string.Empty;
+                var res = string.Empty;
 
                 if (receiveStream != null)
                 {
@@ -74,33 +65,31 @@ namespace GarminConnectBulkExport
                     res = readStream.ReadToEnd();
                     readStream.Close();
                 }
+
                 response.Close();
                 return res;
             }
             catch (WebException webex)
             {
-                if (((HttpWebResponse) (webex.Response)).StatusCode == HttpStatusCode.NotFound)
-                {
-                    return "OK";
-                }
-                return string.Empty;
+                return ((HttpWebResponse)(webex.Response)).StatusCode == HttpStatusCode.NotFound ? "OK" : string.Empty;
             }
         }
 
-        public string DoPost(string url, NameValueCollection data)
+        private string DoPost(string url, NameValueCollection data)
         {
-            var request = (HttpWebRequest) WebRequest.Create(url);
+            var request = (HttpWebRequest)WebRequest.Create(url);
             request.AllowAutoRedirect = false;
             request.CookieContainer = _cookieJar;
 
             var sb = new StringBuilder();
-            foreach (string key in data.AllKeys)
+            foreach (var key in data.AllKeys)
             {
                 sb.AppendFormat("{0}={1}&", key, HttpUtility.UrlEncode(data[key]));
             }
+
             sb.Remove(sb.Length - 1, 1);
 
-            byte[] byteArray = Encoding.UTF8.GetBytes(sb.ToString());
+            var byteArray = Encoding.UTF8.GetBytes(sb.ToString());
             request.AllowAutoRedirect = false;
             request.Method = "POST";
             request.ContentType = "application/x-www-form-urlencoded;charset=UTF-8";
@@ -115,147 +104,139 @@ namespace GarminConnectBulkExport
                 dataStream.Close();
             }
 
-            var response = (HttpWebResponse) request.GetResponse();
+            var response = (HttpWebResponse)request.GetResponse();
             Console.WriteLine("Content length is {0}", response.ContentLength);
             Console.WriteLine("Content type is {0}", response.ContentType);
 
             // Get the stream associated with the response.
-            Stream receiveStream = response.GetResponseStream();
+            var receiveStream = response.GetResponseStream();
 
-            string res = string.Empty;
+            var res = string.Empty;
             if (receiveStream != null)
             {
-                using(var readStream = new StreamReader(receiveStream, Encoding.UTF8))
+                using (var readStream = new StreamReader(receiveStream, Encoding.UTF8))
                 {
                     res = readStream.ReadToEnd();
                     readStream.Close();
                 }
             }
+
             response.Close();
 
             return res;
-
         }
 
-        public bool Login()
+        private bool Login()
         {
             Logger.Log("Starting Auth...");
             var loginParams = new NameValueCollection();
-            string resultStr = DoGet("https://sso.garmin.com/sso/login?service="
-                                     + HttpUtility.UrlEncode("https://connect.garmin.com/post-auth/login")
-                                     + "&clientId=GarminConnect&consumeServiceTicket=false");
+            var resultStr = DoGet("https://sso.garmin.com/sso/login?service="
+                                  + HttpUtility.UrlEncode("https://connect.garmin.com/post-auth/login")
+                                  + "&clientId=GarminConnect&consumeServiceTicket=false");
 
             var ltRegex = new Regex(@"name=""lt""\s+value=""([^""]+)""");
-            Match ltMatch = ltRegex.Match(resultStr);
-            if (ltMatch.Success && ltMatch.Groups.Count == 2)
-            {
-                string lt = ltMatch.Groups[1].Value;
-                loginParams.Add("lt", lt);
+            var ltMatch = ltRegex.Match(resultStr);
+            if (!ltMatch.Success || ltMatch.Groups.Count != 2) return false;
+            var lt = ltMatch.Groups[1].Value;
+            loginParams.Add("lt", lt);
 
-                Logger.Log("Obtained lt..." + lt);
+            Logger.Log("Obtained lt..." + lt);
 
-                loginParams.Add("username", _email);
-                loginParams.Add("password", _password);
-                loginParams.Add("_eventId", "submit");
-                loginParams.Add("embed", "true");
+            loginParams.Add("username", _email);
+            loginParams.Add("password", _password);
+            loginParams.Add("_eventId", "submit");
+            loginParams.Add("embed", "true");
 
-                resultStr = DoPost("https://sso.garmin.com/sso/login?service="
-                                   + HttpUtility.UrlEncode("https://connect.garmin.com/post-auth/login")
-                                   + "&clientId=GarminConnect&consumeServiceTicket=false&lt=" + lt, loginParams);
+            resultStr = DoPost("https://sso.garmin.com/sso/login?service="
+                               + HttpUtility.UrlEncode("https://connect.garmin.com/post-auth/login")
+                               + "&clientId=GarminConnect&consumeServiceTicket=false&lt=" + lt, loginParams);
 
-                var ticketRegex = new Regex(@"ticket=([^']+)'");
-                Match ticketMatch = ticketRegex.Match(resultStr);
-                if (ticketMatch.Success && ticketMatch.Groups.Count == 2)
-                {
-                    string ticket = ticketMatch.Groups[1].Value;
-                    Logger.Log("Obtained ticket..." + ticket);
-                    _redirectCount = 0;
-                    resultStr =
-                        DoGet("https://connect.garmin.com/post-auth/login?ticket=" +
-                              HttpUtility.UrlEncode(ticket.Trim()));
+            var ticketRegex = new Regex(@"ticket=([^']+)'");
+            var ticketMatch = ticketRegex.Match(resultStr);
+            if (!ticketMatch.Success || ticketMatch.Groups.Count != 2) return false;
 
-                    return !string.IsNullOrEmpty(resultStr);
-                }
-            }
+            var ticket = ticketMatch.Groups[1].Value;
+            Logger.Log("Obtained ticket..." + ticket);
+            _redirectCount = 0;
+            resultStr =
+                DoGet("https://connect.garmin.com/post-auth/login?ticket=" +
+                      HttpUtility.UrlEncode(ticket.Trim()));
 
-            return false;
+            return !string.IsNullOrEmpty(resultStr);
         }
 
         public void Download()
         {
-            if (Login())
+            if (!Login()) return;
+
+            Logger.Log("Logged in...");
+            var pageNumber = 1;
+            const int pageSize = 100; //seems to be the max possible amount of results per api call
+            IJEnumerable<JToken> list;
+            do
             {
-                Logger.Log("Logged in...");
-                int pageNumber = 1;
-                const int pageSize = 100; //seems to be the max possible amount of results per api call
-                IJEnumerable<JToken> list;
-                do
+                var start = (pageNumber - 1) * pageSize;
+                Logger.Log($"Downloading list of available activities. Page #{pageNumber}");
+                var activities =
+                    DoGet(
+                        $"https://connect.garmin.com/modern/proxy/activity-search-service-1.0/json/activities?start={start}&limit={pageSize}");
+
+                var results = JObject.Parse(activities);
+
+                list = results.GetValue("results")?["activities"]?.AsJEnumerable() ?? null;
+                if (list != null)
                 {
-                    int start = (pageNumber - 1)*pageSize;
-                    Logger.Log(string.Format("Downloading list of available activities. Page #{0}", pageNumber));
-                    string activities =
-                        DoGet(
-                            string.Format(
-                                "https://connect.garmin.com/modern/proxy/activity-search-service-1.0/json/activities?start={0}&limit={1}",
-                                start, pageSize));
-
-                    JObject results = JObject.Parse(activities);
-
-                    list = results.GetValue("results")["activities"].AsJEnumerable();
-                    if (list != null)
+                    foreach (var token in list)
                     {
-                        foreach (JToken token in list)
-                        {
-                            string activityId = token["activity"]["activityId"].ToString();
-                            Logger.Log("Downloading activity " + activityId);
-                            DownloadActivity(activityId);
-                        }
+                        var activityId = token["activity"]?["activityId"]?.ToString() ?? string.Empty;
+                        Logger.Log("Downloading activity " + activityId);
+                        DownloadActivity(activityId);
                     }
-                    pageNumber++;
-                } while (list != null);
-            }
+                }
+
+                pageNumber++;
+            } while (list != null);
         }
 
         private void DownloadActivity(string activityId)
         {
-            string fileName = string.Format("{0}\\{1}.zip", _folder, activityId);
+            var fileName = $"{_folder}\\{activityId}.zip";
             if (File.Exists(fileName))
             {
-                Logger.Log(string.Format("File \"{0}\" already exists", fileName));
+                Logger.Log($"File \"{fileName}\" already exists");
                 return;
             }
+
             try
             {
                 var request =
                     (HttpWebRequest)
-                        WebRequest.Create(
-                            string.Format("https://connect.garmin.com/proxy/download-service/files/activity/{0}", activityId));
+                    WebRequest.Create($"https://connect.garmin.com/proxy/download-service/files/activity/{activityId}");
                 request.CookieContainer = _cookieJar;
                 request.AllowAutoRedirect = false;
                 request.Referer = "https://connect.garmin.com/modern/";
                 request.Method = "GET";
-                var response = (HttpWebResponse) request.GetResponse();
+                var response = (HttpWebResponse)request.GetResponse();
 
-                Logger.Log(string.Format("Content length is {0}", response.ContentLength));
-                Logger.Log(string.Format("Content type is {0}", response.ContentType));
+                Logger.Log($"Content length is {response.ContentLength}");
+                Logger.Log($"Content type is {response.ContentType}");
 
 
-                using (FileStream stream = File.Create(fileName))
+                using (var stream = File.Create(fileName))
                 {
                     var responseStream = response.GetResponseStream();
-                    if (responseStream != null)
-                    {
-                        responseStream.CopyTo(stream);
-                    }
+                    responseStream?.CopyTo(stream);
+
                     stream.Close();
                 }
+
                 response.Close();
             }
             catch (WebException webex)
             {
                 if (((HttpWebResponse)(webex.Response)).StatusCode == HttpStatusCode.NotFound)
                 {
-                    Logger.Log(string.Format("Activity {0} could not be downloaded", activityId));
+                    Logger.Log($"Activity {activityId} could not be downloaded");
                 }
             }
         }

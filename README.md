@@ -7,6 +7,12 @@ This is a command line utility which one can use to create a backup of personal 
 - [Garmin Connect](https://connect.garmin.com/modern/)
 - [Traning Peaks](http://home.trainingpeaks.com)
 
+## Usage
+
+```shell
+GarminConnectBulkExport.exe -u=email -p=password -o=c:\temp
+```
+
 ## My sporting profiles
 
 Feel free to add me on Strava or just [see my profile](https://www.strava.com/athletes/iamruss)

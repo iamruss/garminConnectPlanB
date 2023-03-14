@@ -48,19 +48,23 @@ namespace GarminConnectBulkExport
                     }
                 }
             }
+
             if (!Directory.Exists(outputDir))
             {
                 Console.WriteLine("Cannot access {0}", outputDir);
                 return;
             }
+
             if (string.IsNullOrEmpty(password))
             {
                 password = AskPassword();
             }
+
             if (string.IsNullOrEmpty(userName))
             {
                 userName = AskUserName();
             }
+
             var logger = new ConsoleLogger();
             var downloader = new Downloader(userName, password, outputDir, logger);
             downloader.Download();
@@ -76,6 +80,7 @@ namespace GarminConnectBulkExport
                 Console.Write("Enter Garmin Connect username(email):");
                 userName = Console.ReadLine();
             } while (userName == null);
+
             userName = userName.Trim();
             return userName;
         }
@@ -88,6 +93,7 @@ namespace GarminConnectBulkExport
                 Console.Write("Enter Garmin Connect password:");
                 password = Console.ReadLine();
             } while (password == null);
+
             password = password.Trim();
             return password;
         }
